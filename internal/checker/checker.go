@@ -1,7 +1,6 @@
 package checker
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 )
@@ -20,7 +19,10 @@ func CheckUrl(url string) CheckResult {
 	if err != nil {
 		return CheckResult{
 			Target: url,
-			Err:    fmt.Errorf("failed to fetch URL: %w", err),
+			Err: &UnreachableError{
+				URL: url,
+				Err: err,
+			},
 		}
 	}
 	defer resp.Body.Close()
