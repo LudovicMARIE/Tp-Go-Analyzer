@@ -27,12 +27,12 @@ func CheckUrl(target config.InputTarget) CheckResult {
 	client := http.Client{
 		Timeout: 6 * time.Second,
 	}
-	resp, err := client.Get(target.Name)
+	resp, err := client.Get(target.URL)
 	if err != nil {
 		return CheckResult{
 			InputTarget: target,
 			Err: &UnreachableError{
-				URL: target.Name,
+				URL: target.URL,
 				Err: err,
 			},
 		}
