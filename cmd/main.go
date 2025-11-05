@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ludovicMARIE/Tp-Go-Analyzer/internal/checker"
 )
@@ -36,19 +37,20 @@ func main() {
 		"https://www.gaming.forum/topic/strategy",
 	}
 
-	results := make(chan checker.CheckResult)
+	var wg sync.WaitGroup
+
+	wg.Add(len(targets))
 
 	for _, url := range targets {
-		go checker.CheckUrl(url, results)
+		go func(u string) {
+			defer wg.Done()
+			result := checker.CheckUrl(u)
+			if result.Err != nil {
+				fmt.Printf("KO %s : erreur - %v\n", result.Target, result.Err)
+			} else {
+				fmt.Printf("OK %s - %s \n", result.Target, result.Status)
+			}
+		}(url)
 	}
-
-	for range targets {
-		result := <-results
-		if result.Err != nil {
-			fmt.Printf("KO %s : erreur - %v\n", result.Target, result.Err)
-		} else {
-			fmt.Printf("OK %s - %s \n", result.Target, result.Status)
-		}
-	}
-
+	wg.Wait()
 }
