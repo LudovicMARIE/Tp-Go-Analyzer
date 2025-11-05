@@ -6,7 +6,14 @@ import (
 	"sync"
 
 	"github.com/ludovicMARIE/Tp-Go-Analyzer/internal/checker"
+	"github.com/ludovicMARIE/Tp-Go-Analyzer/internal/config"
+	"github.com/ludovicMARIE/Tp-Go-Analyzer/internal/reporter"
 	"github.com/spf13/cobra"
+)
+
+var (
+	inputFilePath  string
+	outputFilePath string
 )
 
 var checkCmd = &cobra.Command{
@@ -14,59 +21,71 @@ var checkCmd = &cobra.Command{
 	Short: "check command goes brr",
 	Long:  "check command goes brr",
 	Run: func(cmd *cobra.Command, args []string) {
-		targets := []string{"https://www.google.com",
-			"https://www.notarealwebsite.abc",
-			"https://github.com",
-			"https://www.movie.database/film/details",
-			"https://www.gaming.news/release/new-game",
-			"https://www.health.clinic/appointment/online",
-			"https://www.car.manufacturer/model/electric",
-			"https://www.home.decor/ideas/living-room",
-			"https://www.environmental.org/project/clean-water",
-			"https://www.space.agency/mission/mars",
-			"https://www.fashion.magazine/trend/summer",
-			"https://www.tech.conference/schedule/day1",
-			"https://www.food.blog/recipe/dessert",
-			"https://www.online.course/programming/python",
-			"https://www.travel.guide/city/paris",
-			"https://www.music.label/artist/new-album",
-			"https://www.sports.club/events/match",
-			"https://www.photography.tips/technique/lighting",
-			"https://www.diy.tools/review/drill",
-			"https://www.pet.vet/service/vaccination",
-			"https://www.gardening.store/seeds/flower",
-			"https://www.finance.advice/retirement/planning",
-			"https://www.history.podcast/episode/ww2",
-			"https://www.language.exchange/partner/find",
-			"https://www.book.review/author/classic",
-			"https://www.movie.review/genre/comedy",
-			"https://www.gaming.forum/topic/strategy",
+
+		if inputFilePath == "" {
+			fmt.Println("Erreur : le chemin du fichier d'entrée (--input) est obligatoire.")
+			return
+		}
+
+		targets, err := config.LoadTargetsFromFile(inputFilePath)
+		if err != nil {
+			fmt.Printf("erreur lors du chargement des URLSs: %v\n", err)
+			return
+		}
+
+		if len(targets) == 0 {
+			fmt.Println("Aucune URL à vérifier dans le fichier d'entrée")
+			return
 		}
 
 		var wg sync.WaitGroup
+		resultsChan := make(chan checker.CheckResult, len(targets))
 
 		wg.Add(len(targets))
 
-		for _, url := range targets {
-			go func(u string) {
+		for _, target := range targets {
+			go func(t config.InputTarget) {
 				defer wg.Done()
-				result := checker.CheckUrl(u)
-				if result.Err != nil {
-					var unreachable *checker.UnreachableError
-					if errors.As(result.Err, &unreachable) {
-						fmt.Printf("%s est inaccessible : %v\n", unreachable.URL, unreachable.Err)
-					} else {
-						fmt.Printf("%s : erreur - %v\n", result.Target, result.Err)
-					}
-				} else {
-					fmt.Printf("OK %s - %s \n", result.Target, result.Status)
-				}
-			}(url)
+				result := checker.CheckUrl(t)
+				resultsChan <- result // Envoyer le résultat au canal
+			}(target)
 		}
 		wg.Wait()
+		close(resultsChan)
+
+		var finalReport []checker.ReportEntry
+		for res := range resultsChan { // Récupérer tous les résultats du canal
+			reportEntry := checker.ConvertToReportEntry(res)
+			finalReport = append(finalReport, reportEntry)
+
+			// Affichage immédiat comme avant
+			if res.Err != nil {
+				var unreachable *checker.UnreachableError
+				if errors.As(res.Err, &unreachable) {
+					fmt.Printf("KO %s (%s) est inaccessible : %v\n", res.InputTarget.Name, unreachable.URL, unreachable.Err)
+				} else {
+					fmt.Printf("KO %s (%s) : erreur - %v\n", res.InputTarget.Name, res.InputTarget.URL, res.Err)
+				}
+			} else {
+				fmt.Printf("OK %s (%s) : OK - %s\n", res.InputTarget.Name, res.InputTarget.URL, res.Status)
+			}
+		}
+
+		if outputFilePath != "" {
+			err := reporter.ExportResultsToJsonFile(outputFilePath, finalReport)
+			if err != nil {
+				fmt.Printf("Erreur lors de l'exportation des résultats: %v\n", err)
+			} else {
+				fmt.Printf("✅ Résultats exportés vers %s\n", outputFilePath)
+			}
+		}
+
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(checkCmd)
+	checkCmd.Flags().StringVarP(&inputFilePath, "input", "i", "", "Chemin vers le fichier d'entrée")
+	checkCmd.Flags().StringVarP(&outputFilePath, "output", "o", "", "Chemin vers le fichier de sortie")
+	checkCmd.MarkFlagRequired("input")
 }
